@@ -108,8 +108,8 @@ while True:
             initBB2 =(x,y,w,h)
 
 
-            prott1 = ".\\MobileNetSSD_deploy.prototxt"
-            prott2 = ".\\MobileNetSSD_deploy.caffemodel"
+            prott1 = "./MobileNetSSD_deploy.prototxt"
+            prott2 = "./MobileNetSSD_deploy.caffemodel"
             net = cv2.dnn.readNetFromCaffe(prott1, prott2)
 
             CLASSES = ["person"]
