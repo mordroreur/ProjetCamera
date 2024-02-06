@@ -5,6 +5,11 @@ import cv2
 # define a video capture object 
 vid = cv2.VideoCapture(0, cv2.CAP_DSHOW) 
 
+if not vid.isOpened():
+    vid = cv2.VideoCapture("/dev/video0")
+    if not vid.isOpened():
+        raise IOError("Cannot open webcam")
+
 print("Pour sortir de l'application appuyez sur 'Q'.")
 
 while(True): 
