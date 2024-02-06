@@ -9,11 +9,13 @@ output = False
 hog = cv2.HOGDescriptor()
 hog.setSVMDetector(cv2.HOGDescriptor_getDefaultPeopleDetector())
 
-
-
 # open webcam video stream
 cap = cv2.VideoCapture(0)
 
+if not cap.isOpened():
+    cap = cv2.VideoCapture("/dev/video0")
+    if not cap.isOpened():
+        raise IOError("Cannot open webcam")
 
 # the output will be written to output.avi
 if(output):
