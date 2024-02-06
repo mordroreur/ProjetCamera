@@ -3,14 +3,15 @@ import cv2
 import numpy as np  
   
 # define a video capture object 
-vid = cv2.VideoCapture(0, cv2.CAP_DSHOW) 
+vid = cv2.VideoCapture(0, cv2.CAP_DSHOW)
 
-if(not vid.isOpened()):
-    print("Erreur d'ouverture de la caméra!")
-    exit()
+if not vid.isOpened():
+    vid = cv2.VideoCapture("/dev/video0")
+    if not vid.isOpened():
+        raise IOError("Cannot open webcam")
+
 ret, frame = vid.read()
 height, width = frame.shape[:2]
-
 
 print("Pour sortir de l'application appuyez sur 'Q'.")
 
