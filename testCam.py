@@ -3,14 +3,17 @@ import cv2
   
   
 # define a video capture object 
-vid = cv2.VideoCapture(0) 
-  
+vid = cv2.VideoCapture(0, cv2.CAP_DSHOW) 
+
+print("Pour sortir de l'application appuyez sur 'Q'.")
+
 while(True): 
       
     # Capture the video frame 
     # by frame 
     ret, frame = vid.read() 
-  
+
+    
     # Display the resulting frame 
     cv2.imshow('frame', frame) 
       
@@ -21,6 +24,6 @@ while(True):
         break
   
 # After the loop release the cap object 
-vid.release() 
+vid.release()
 # Destroy all the windows 
 cv2.destroyAllWindows() 
