@@ -9,14 +9,56 @@ import numpy as np
 from ultralytics import YOLO
 
 
-import time
+
+def distance_euclidienne(point1, point2):
+    return (point1[0] - point2[0])**2 + (point1[1] - point2[1])**2
+
+def associer_point_liste(point, listes):
+    meilleure_liste = 0
+    meilleure_distance = distance_euclidienne(point, listes[0][-1])
+    
+    for i in range(1, len(listes)):
+        if(len(listes[i]) != 0):
+            distance_last = distance_euclidienne(point, listes[i][-1])
+            if distance_last < meilleure_distance:
+                meilleure_distance = distance_last
+                meilleure_liste = i
+    
+    return meilleure_liste
+
+
+def findNewList(meilleure_qui, humanPosition, humanPath, humanqui):
+    for i in range(humanPath):
+        if(len(humanPath[i]) == 0):
+            humanqui[meilleure_qui] = i
+            return
+    print("C'est la merde...")
+
+def getCloser(path, positions, usedPosition):
+    best_pos = -1
+    best_dist = 800000000
+
+    for i in range(len(positions)):
+        if(usedPosition[i]):
+            pos_dist = distance_euclidienne(positions[i], path[-1])
+            # print(best_dist, pos_dist, " position ", i)
+            if pos_dist < best_dist:
+                best_dist = pos_dist
+                best_pos = i
+    return best_pos
+
+
+
+
+
+
+
+
 
 # list the possible arguments
 ap = argparse.ArgumentParser()
 ap.add_argument("-o", "--output", help="path where the output video will be created")
 ap.add_argument("-v", "--video", help="path to a video file")
-#ap.add_argument("-a", "--min-area", type=int, default=500, help="minimum area size")
-#ap.add_argument("-t", "--tracker", type=str, default="csrt", help="OpenCV object tracker type")
 args = vars(ap.parse_args())
 
 # disable the demonstration output video
@@ -44,9 +86,11 @@ model.info()
 
 
 # initialisation des variables utiles
-humanSquare = None
+humanPath = [] # chemin emprunte par chaque humain detecte
+lastSeen = []
+lastHumanNumber = 0
 
-
+colors = [(255, 0, 0), (0, 255, 0), (0, 0, 255), (255, 255, 0), (255, 0, 255), (0, 255, 255), (0, 0, 0), (255, 255, 255)]
 
 
 # do until we want to stop
@@ -54,22 +98,71 @@ while(True):
     # Capture frame-by-frame the camera
     ret, frame = vid.read()
 
-
+    humanPosition = []
+    humanLinking = []
+    usedPosition = []
 
     results = model(frame, verbose=False)
-    print(results[0].boxes)
+    # print(results[0].boxes)
 
-    for lb in results[0].boxes.xyxy:
-        (x, y, w, h)  = lb
-        print(x.item())
-        cv2.rectangle(frame, (int(x.item()), int(y.item())), (int(w.item()), int(h.item())), (255, 0, 0), 1)
 
-    frame = results[0].plot()
+    # detection du nombre d'humain
+    for i in range(len(results[0].boxes.xyxy)):
+        if(int(results[0].boxes.cls[i].item()) == 0):
+            humanPosition.append((int(results[0].boxes.xywh[i][0].item()), int(results[0].boxes.xywh[i][1].item())))
+            usedPosition.append(True)
+    
+    for i in range(len(lastSeen)-1, -1, -1):
+        lastSeen[i] = lastSeen[i]-1
+        if(lastSeen[i] == 0):
+            humanPath.pop(i)
+            lastSeen.pop(i)
+            i = i - 1
+
+    for i in range(len(humanPosition)):
+        humanLinking.append(-1)
+
+    # detection de la suite de chaque chemin
+    for i in range(len(humanPath)):
+        cl = getCloser(humanPath[i], humanPosition, usedPosition)
+        if(cl != -1):
+            usedPosition[cl] = False
+            humanLinking[cl] = i
+            humanPath[i].append(humanPosition[cl])
+            lastSeen[i] = 10
+    
+    # creation des nouveaux chemins
+    for i in range(len(humanPosition)):
+        if(humanLinking[i] == -1):
+            humanLinking[i] = len(humanPath)
+            humanPath.append([])
+            lastSeen.append(10)
+            humanPath[-1].append(humanPosition[i])
+    
+            
+
+    for i in range(len(humanPath)):
+        for j in range(len(humanPath[i])-1):
+            cv2.line(frame, humanPath[i][j], humanPath[i][j+1], colors[i], 1)   
+
+
+    nbhumVue = 0
+    for i in range(len(results[0].boxes.xyxy)):
+        if(int(results[0].boxes.cls[i].item()) == 0):
+            # print(nbhumVue, "vue linke", humanLinking[nbhumVue])
+            nbhumVue = nbhumVue +1
+            (x, y, w, h)  = results[0].boxes.xyxy[i]
+            #print(humanLinking[i])
+            cv2.rectangle(frame, (int(x.item()), int(y.item())), (int(w.item()), int(h.item())), colors[humanLinking[nbhumVue-1]], 1)
+
+            
+
+    # frame = results[0].plot()
 
     # cv2.rectangle(frame, (results[0].boxes.xywh[0], results[0].boxes.xywh[1]), (results[0].boxes.xywh[0][2]+results[0].boxes.xywh[0][0], results[0].boxes.xywh[0][3]+results[0].boxes.xywh[0][1]),
     #                      (255, 0, 0), 1)
     
-    print("next\n\n")
+    # print("next\n\n")
 
     # Write the output video
     if(ENABLE_OUTPUT):
