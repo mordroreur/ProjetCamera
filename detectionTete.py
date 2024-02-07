@@ -8,7 +8,7 @@ print(cv2.__version__)
 vid = cv2.VideoCapture(0, cv2.CAP_DSHOW) 
 
 if not vid.isOpened():
-    vid = cv2.VideoCapture("/dev/video0")
+    vid = cv2.VideoCapture(0)
     if not vid.isOpened():
         raise IOError("Cannot open webcam")
 

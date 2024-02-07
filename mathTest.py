@@ -40,11 +40,18 @@ if(ENABLE_OUTPUT):
 hog = cv2.HOGDescriptor()
 hog.setSVMDetector(cv2.HOGDescriptor_getDefaultPeopleDetector())
 
-
 # initialisation des variables utiles
 humanSquare = None
 
 
+# open webcam video stream
+cap = cv2.VideoCapture(0)
+
+
+if not cap.isOpened():
+    cap = cv2.VideoCapture("/dev/video0")
+    if not cap.isOpened():
+        raise IOError("Cannot open webcam")
 
 
 
@@ -128,6 +135,7 @@ cv2.destroyAllWindows()
 cv2.waitKey(1)
 
 
+
 """
 
 
@@ -152,3 +160,4 @@ cv2.waitKey(1)
 
 
 """
+
