@@ -14,6 +14,8 @@ import sensor, image, time, os, tf, math, uos, gc
 ################################
 
 debug = True
+chariot_allume = False
+video = True
 
 # Camera (sensor) settings
 sensor.reset()                         # Reset and initialize the sensor.
@@ -31,8 +33,15 @@ except Exception as e: raise Exception(e)
 stream = image.ImageIO("/video_des_deux.bin", "r")
 
 # Read first image
-# img = sensor.snapshot()
-img = stream.read(copy_to_fb=True, loop=True, pause=True)
+# tmp = img.scale(x_scale=90)
+if video:
+    img = stream.read(copy_to_fb=True, loop=True, pause=True)
+    # img.scale(x_size=100, y_size=100)
+    tmp = img.copy()
+else:
+    img = sensor.snapshot()
+    # img.scale(x_size=96, y_size=96)
+    tmp = img.copy()
 
 # Global variables
 min_confidence = 0.55
@@ -42,8 +51,8 @@ seuil_prob = 20
 
 squareX = 16
 squareY = 16
-sizeX = img.width()/squareX
-sizeY = img.height()/squareY
+sizeX = tmp.width()/squareX
+sizeY = tmp.height()/squareY
 
 heat = 5
 
@@ -65,6 +74,9 @@ pileRectangleEnglobe = []
 oldRect = []
 oldColor = []
 
+person_max_distance = 15
+person_max_area = 1000
+
 # Processing
 
 #clock = time.clock()  # Create a clock object to track the FPS.
@@ -74,12 +86,22 @@ def whereToGo():
     global oldRect
     global sizeX
     global sizeY
+    """
+    for i in range(sizeX+1):
+        for j in range(sizeY+1):
+            probability[i][j] = 0"""
+
 
     # Get new image
-    # img = sensor.snapshot()
-    img = stream.read(copy_to_fb=True, loop=True, pause=True)
+    if video:
+        img = stream.read(copy_to_fb=True, loop=True, pause=True)
+        # img.scale(x_size=100, y_size=100)
+        tmp = img.copy()
+    else:
+        img = sensor.snapshot()
+        # img.scale(x_size=96, y_size=96)
+        tmp = img.copy()
 
-    tmp = img.copy()
     tmp.mean(3, threshold=True, offset=5, invert=True)
 
     # Initialize box coordinates
@@ -88,22 +110,19 @@ def whereToGo():
     y_min = img.height() + 1
     y_max = 0
 
-    # detect() returns all objects found in the image (splitted out per class already)
-    # we skip class index 0, as that is the background, and then draw circles of the center
-    # of our objects
+    # AI person detection
+    # 0 : background
+    # 1 : person
     detected = net.detect(tmp, thresholds=[(math.ceil(min_confidence * 255), 255)])
     for i, detection_list in enumerate(detected):
-        # print(detection_list)
-        if (i == 0): continue # background class
-        if (len(detection_list) == 0): continue # no detections for this class?
 
-        # print("********** %s **********" % labels[i])
+        if (i == 0): continue # background class
+        if (len(detection_list) == 0): continue # no detections for this class
+
         for d in detection_list:
             [x, y, w, h] = d.rect()
             if h < seuil_h_min: continue
             if w*h > seuil_area_max: continue
-            # center_x = math.floor(x + (w / 2))
-            # center_y = math.floor(y + (h / 2))
 
             # Compute the probability heat map
             for xt in range(int(x/squareX), int(x/squareX + w/squareX)+1):
@@ -111,16 +130,14 @@ def whereToGo():
                     if probability[xt][yt] < seuil_prob:
                         probability[xt][yt] += heat
 
-            # print('x %d\ty %d' % (center_x, center_y))
-            # img.draw_circle((center_x, center_y, 4), color=colors[i], thickness=2)
-            # img.draw_rectangle(x, y, w, h, color=(0,0, 255), thickness=1)
-
-
+    # print heat map and compute min and max coordinates
 
     for i in range(sizeX):
         for j in range(sizeY):
             if (probability[i][j] != 0):
-                probability[i][j] = probability[i][j]-1
+                probability[i][j] = probability[i][j]-2
+                if(probability[i][j] < 0):
+                    probability[i][j] = 0
 
                 if i < x_min:
                     x_min = i
@@ -131,7 +148,9 @@ def whereToGo():
                     x_max = i
                 if j > y_max:
                     y_max = j
+
             """
+
             img.draw_rectangle(i*squareX, j*squareY,
                                squareX, squareY,
                                color=(int(255*probability[i][j]/10),
@@ -141,7 +160,10 @@ def whereToGo():
             """
 
 
-    #img.draw_rectangle(x_min*squareX, y_min*squareY, (x_max-x_min)*squareX, (y_max-y_min)*squareY, color=(0, 255, 255))
+
+    # img.draw_rectangle(x_min*squareX, y_min*squareY, (x_max-x_min)*squareX, (y_max-y_min)*squareY, color=(0, 255, 255))
+
+    # Differenciate different persons
 
     pileRectangleEnglobe = []
     numberOfPeople = 0
@@ -153,12 +175,14 @@ def whereToGo():
                     if(visited[i-1][j] != 0):
                         visited[i][j] = visited[i-1][j]
                         who = visited[i][j]-1
-                        pileRectangleEnglobe[who][2] = max(pileRectangleEnglobe[who][2], i+1-pileRectangleEnglobe[who][0])
+                        pileRectangleEnglobe[who][2] = max(pileRectangleEnglobe[who][2],
+                                                           i+1-pileRectangleEnglobe[who][0])
                 if(j != 0):
                     if(visited[i][j-1] != 0 and visited[i][j] == 0):
                         visited[i][j] = visited[i][j-1]
                         who = visited[i][j]-1
-                        pileRectangleEnglobe[who][3] = max(pileRectangleEnglobe[who][3], j+1-pileRectangleEnglobe[who][1])
+                        pileRectangleEnglobe[who][3] = max(pileRectangleEnglobe[who][3],
+                                                           j+1-pileRectangleEnglobe[who][1])
                 if(visited[i][j] == 0):
                     numberOfPeople+=1
                     visited[i][j] = numberOfPeople
@@ -167,6 +191,8 @@ def whereToGo():
     for i in range(sizeX):
         for j in range(sizeY):
             visited[i][j] = 0
+
+    # Compute bounding boxes merge
 
     for rty in range(2):
         i = 0
@@ -181,7 +207,7 @@ def whereToGo():
                 jy = pileRectangleEnglobe[j][1]
                 jw = pileRectangleEnglobe[j][0]+pileRectangleEnglobe[j][2]
                 jh = pileRectangleEnglobe[j][1]+pileRectangleEnglobe[j][3]
-                if(ix<= jx and iw >=jx and((jy <= iy and jh >=ih) or (jy >= iy and jh <=ih) or (jy >= iy and jy <= ih) or (jh >= iy and jh <= ih))):
+                if(ix<= jx and iw >=jx and ((jy <= iy and jh >=ih) or (jy >= iy and jh <=ih) or (jy >= iy and jy <= ih) or (jh >= iy and jh <= ih))):
                     fusioList.append(j)
                 elif(ix<= jw and iw >=jw and((jy <= iy and jh >=ih) or (jy >= iy and jh <=ih) or (jy >= iy and jy <= ih) or (jh >= iy and jh <= ih))):
                     fusioList.append(j)
@@ -220,13 +246,15 @@ def whereToGo():
 
             i+=1
 
-
+    # Difference person algorithm
 
     if(len(oldRect) != 0):
-        if(len(pileRectangleEnglobe) == 1):
+        if(len(pileRectangleEnglobe) == 0):
+            oldRect = []
+        elif(len(pileRectangleEnglobe) == 1):
             x = (oldRect[0]+oldRect[2]/2)- (pileRectangleEnglobe[0][0]+pileRectangleEnglobe[0][2]/2)
             y = (oldRect[1]+oldRect[3]/2)- (pileRectangleEnglobe[0][1]+pileRectangleEnglobe[0][3]/2)
-            if(x*x+y*y < 10):
+            if(x*x+y*y < 20):
                 if(pileRectangleEnglobe[0][2] + pileRectangleEnglobe[0][3] - oldRect[2]+oldRect[3] > -2):
                     oldRect = pileRectangleEnglobe[0].copy()
                 else:
@@ -241,11 +269,11 @@ def whereToGo():
                 x = (oldRect[0]+oldRect[2]/2)- (pileRectangleEnglobe[i][0]+pileRectangleEnglobe[i][2]/2)
                 y = (oldRect[1]+oldRect[3]/2)- (pileRectangleEnglobe[i][1]+pileRectangleEnglobe[i][3]/2)
                 actu = x*x+y*y
-                if(abs(actu - mini) < 15):
+                if(abs(actu - mini) < person_max_distance):
                     cc = img.get_statistics(roi=(pileRectangleEnglobe[whomin][0]*squareX,pileRectangleEnglobe[whomin][1]*squareY,pileRectangleEnglobe[whomin][2]*squareX,pileRectangleEnglobe[whomin][3]*squareY))
-                    colC1 = [cc[0], cc[8], cc[16]]
+                    colC1 = [cc[0], cc[8], cc[16]] # img statistics - 0: l_mean, 8: a_mean, 16: b_mean
                     cc = img.get_statistics(roi=(pileRectangleEnglobe[i][0]*squareX,pileRectangleEnglobe[i][1]*squareY,pileRectangleEnglobe[i][2]*squareX,pileRectangleEnglobe[i][3]*squareY))
-                    colC2 = [cc[0], cc[8], cc[16]]
+                    colC2 = [cc[0], cc[8], cc[16]] # img statistics - 0: l_mean, 8: a_mean, 16: b_mean
                     if((oldColor[0]-colC1[0])*(oldColor[0]-colC1[0])+(oldColor[1]-colC1[1])*(oldColor[1]-colC1[1])+(oldColor[2]-colC1[2])*(oldColor[2]-colC1[2]) > (oldColor[0]-colC2[0])*(oldColor[0]-colC2[0])+(oldColor[1]-colC2[1])*(oldColor[1]-colC2[1])+(oldColor[2]-colC2[2])*(oldColor[2]-colC2[2])):
                         whomin = i
                         mini = x*x+y*y
@@ -255,7 +283,7 @@ def whereToGo():
                         mini = actu
             x = (oldRect[0]+oldRect[2]/2)- (pileRectangleEnglobe[whomin][0]+pileRectangleEnglobe[whomin][2]/2)
             y = (oldRect[1]+oldRect[3]/2)- (pileRectangleEnglobe[whomin][1]+pileRectangleEnglobe[whomin][3]/2)
-            if(x*x+y*y < 1000):
+            if(x*x+y*y < person_max_area):
                 if(pileRectangleEnglobe[whomin][2] + pileRectangleEnglobe[whomin][3] - oldRect[2]+oldRect[3] > -2):
                     oldRect = pileRectangleEnglobe[whomin].copy()
                 else:
@@ -263,16 +291,18 @@ def whereToGo():
                     oldRect[1] -= y
             col = img.get_statistics(roi=(int(oldRect[0]*squareX), int(oldRect[1]*squareY), int(oldRect[2]*squareX), int(oldRect[3]*squareY)))
             if((oldColor[0]-col[0])*(oldColor[0]-col[0])+(oldColor[1]-col[8])*(oldColor[1]-col[8])+(oldColor[2]-col[16])*(oldColor[2]-col[16]) < 500):
-                oldColor = [col[0], col[8], col[16]]
-    else:
+                oldColor = [col[0], col[8], col[16]] # img statistics - 0: l_mean, 8: a_mean, 16: b_mean
+    else: # If there is no person detected
         if(len(pileRectangleEnglobe) > 1):
             oldRect = [x_min, y_min, x_max-x_min, y_max-y_min]
             col = img.get_statistics(roi=(int(oldRect[0]*squareX), int(oldRect[1]*squareY), int(oldRect[2]*squareX), int(oldRect[3]*squareY)))
-            oldColor = [col[0], col[8], col[16]]
+            oldColor = [col[0], col[8], col[16]] # img statistics - 0: l_mean, 8: a_mean, 16: b_mean
         elif(len(pileRectangleEnglobe) == 1):
             oldRect = pileRectangleEnglobe[0].copy()
             col = img.get_statistics(roi=(int(oldRect[0]*squareX), int(oldRect[1]*squareY), int(oldRect[2]*squareX), int(oldRect[3]*squareY)))
-            oldColor = [col[0], col[8], col[16]]
+            oldColor = [col[0], col[8], col[16]] # img statistics - 0: l_mean, 8: a_mean, 16: b_mean
+
+    # Debug: Draw bounding boxes of person detected
 
     if(debug):
         for rec in pileRectangleEnglobe:
@@ -283,7 +313,8 @@ def whereToGo():
             img.draw_rectangle(int(oldRect[0]*squareX), int(oldRect[1]*squareY), int(oldRect[2]*squareX), int(oldRect[3]*squareY),
                                 color=(0, 255, 0), thickness=1)
 
-    #print("next", end="\n\n")
+    # Compute movements directions
+
     if(len(oldRect) != 0):
         yoffset = 0
         if(oldRect[1]+(oldRect[3]/2) < 3):
@@ -328,12 +359,11 @@ _TROLLY_MOVING_LEFT_UUID = bluetooth.UUID(0x1401)
 _TROLLY_MOVING_RIGHT_UUID = bluetooth.UUID(0x1402)
 _TROLLY_MOVING_FORWARD_UUID = bluetooth.UUID(0x1403)
 
+movement_seuil = 0.3
+
 ################################
 #           Functions          #
 ################################
-
-def _decode_moving_char(data):
-    return struct.unpack("<I", data)[0]
 
 async def scan():
     while True:
@@ -342,7 +372,6 @@ async def scan():
                 print(result.name(), result.device)
 
 async def connect_device():
-
     try:
         print("Connecting to", device)
         connection = await device.connect()
@@ -351,8 +380,6 @@ async def connect_device():
         return
 
     print("Successfully connected to", device)
-
-    print(connection)
 
     async with connection:
 
@@ -366,20 +393,28 @@ async def connect_device():
         while True:
             l, r = whereToGo()
 
-            if l > 0.3 and r > 0.3:
+            if l > movement_seuil and r > movement_seuil :
                 await moving_forward_char.write(b'\x01', response=0)
-                # await moving_right_char.write(b'\x01', response=0)
-            elif l > 0.3 and r < 0.3:
+            elif l > movement_seuil and r < movement_seuil:
                 await moving_left_char.write(b'\x01', response=0)
-            elif r > 0.3 and l < 0.3:
+            elif r > movement_seuil and l < movement_seuil:
                 await moving_right_char.write(b'\x01', response=0)
             else:
                 await moving_forward_char.write(b'\x00', response=0)
 
-            await asyncio.sleep_ms(20)
+            await asyncio.sleep_ms(10)
 
 ################################
 #         Main Function        #
 ################################
 
-asyncio.run(connect_device())
+print("")
+print("-"*50)
+print("Ready to track human")
+print("-"*50)
+
+if chariot_allume:
+    asyncio.run(connect_device())
+else :
+    while True:
+        print(whereToGo())
